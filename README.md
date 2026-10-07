@@ -10,7 +10,7 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 |---|---|---|---|
 | 0 | 1D structure: density, gravity, pressure, C/MR² fit | Uniform sphere (analytic) | ✅ |
 | 0b | Self-consistent H₂O layer: SeaFreeze phases, conductive ice Ih shell, adiabatic ocean / HP ice | Closed-form k = a/T shell; M and C/MR² recovered | ✅ (PlanetProfile comparison pending) |
-| 1 | 1D two-phase compaction (McKenzie equations) | Solitary porosity waves | ⬜ |
+| 1 | 1D two-phase compaction (McKenzie equations) | Solitary porosity waves: second-order convergence, c = 2A + 1, mass conservation | ✅ |
 | 2 | 2D Stokes convection, T-dependent ice viscosity | Blankenbach et al. (1989) | ⬜ |
 | 3 | Two-phase convection in the high-pressure ice layer | Literature setups | ⬜ |
 | — | 3D (PETSc / Firedrake) | — | later |
@@ -24,6 +24,10 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 40 mW m⁻² | 799 km | 15 km | 537 km | 247 km | Ih → liquid → VI |
 
 Gravity fixes the *total* H₂O thickness; the heat flux decides how it splits between ocean and high-pressure ice. Assumptions: conductive (non-convecting) Ih shell, adiabatic ocean and HP ice, no salts.
+
+### Meltwater transport through high-pressure ice (Stage 1)
+
+Porosity waves carry water upward in discrete pulses. For rough ice VI parameters (φ₀ = 1 %, Δρ ≈ 120 kg m⁻³), a wave crosses 300 km of HP ice in ~10³–10⁷ yr depending on grain size (10–0.1 mm). The crossing time depends on permeability only, **not** on ice viscosity, which sets the wave width (compaction length ~10 m – 10 km).
 
 ## Install
 
