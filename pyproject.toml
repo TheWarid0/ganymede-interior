@@ -17,3 +17,7 @@ eos = ["SeaFreeze"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+markers = ["slow: long benchmark runs (deselect with -m 'not slow')"]
+addopts = "-m 'not slow'"
