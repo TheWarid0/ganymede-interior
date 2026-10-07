@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ganymede-interior"
+version = "0.0.1"
+description = "A readable interior structure and convection model for Ganymede"
+authors = [{name = "Alexandru Oprea"}]
+license = {text = "MIT"}
+requires-python = ">=3.10"
+dependencies = ["numpy>=2.0", "scipy>=1.11", "matplotlib"]
+
+[project.optional-dependencies]
+dev = ["pytest", "jupyter"]
+eos = ["SeaFreeze"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
