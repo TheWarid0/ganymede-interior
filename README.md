@@ -12,9 +12,12 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 0b | Self-consistent H₂O layer: SeaFreeze phases, conductive ice Ih shell, adiabatic ocean / HP ice | Closed-form k = a/T shell; M and C/MR² recovered | ✅ (PlanetProfile comparison pending) |
 | 1 | 1D two-phase compaction (McKenzie equations) | Solitary porosity waves: second-order convergence, c = 2A + 1, mass conservation | ✅ |
 | 2 | 2D Stokes convection on a staggered grid, T-dependent viscosity | Analytic Stokes flow (order 2, div v ≈ 0); Blankenbach et al. (1989) 1a and 2a within 0.05 % | ✅ |
-| 2d | Real ice: Arrhenius viscosity, dimensional ice-shell setup | Conductive vs convective shell (critical Ra) | ⬜ |
+| 2d | Real ice Ih: Arrhenius diffusion creep (capped), k = 651/T, equilibrium shell thickness | k(T) conduction analytic; cap-insensitivity; transient = steady | 🟡 in progress |
+| 3a | Stokes on PETSc: symmetric saddle point, FGMRES + Schur field split | Analytic Stokes; mesh- and contrast-independent iterations (≤ 11 up to η contrast 10⁸) | ✅ |
+| 3b | DMStag assembly + geometric multigrid | Same answers as 3a; O(N) velocity solve | ⬜ |
+| 3c | MPI-parallel runs | 1 vs 4 processes identical | ⬜ |
 | 3 | Two-phase convection in the high-pressure ice layer | Literature setups | ⬜ |
-| — | 3D (PETSc / Firedrake) | — | later |
+| 3d | 3D DMStag Stokes and convection | 3D analytic; Busse et al. (1994) | ⬜ |
 
 ## First results (pure-water H₂O layer, self-consistent with M and C/MR²)
 
@@ -39,10 +42,23 @@ Porosity waves carry water upward in discrete pulses. For rough ice VI parameter
 
 Richardson-extrapolated from 64² and 128² grids.
 
+### Ice Ih shell: does it convect? (Stage 2d)
+
+Heat leaving the top of a shell of thickness D (q_in = 15 mW m⁻², T_b ≈ 268 K, Arrhenius diffusion creep, k = 651/T, 64²):
+
+| D | 0.1 mm grains: q_out | 1 mm grains: q_out |
+|---|---|---|
+| 15 km | 38.7 (conductive) | 38.7 (conductive) |
+| 39 km | 29.2 (Nu 1.96) | 14.9 (conductive) |
+| 90 km | 23.3 (Nu 3.61) | 9.0 (Nu 1.39) |
+
+The equilibrium shell sits where q_out = q_in: ≈ 39 km (conductive) for 1 mm grains, but beyond 90 km (convecting) for 0.1 mm grains. Base temperature is still held fixed; the pressure-dependent melting point and the ice Ih–III limit come next.
+
 ## Install
 
 ```bash
 pip install -e ".[dev,eos]"
+conda install -c conda-forge petsc petsc4py mpi4py   # for Stage 3
 pytest              # fast tests (~25 s)
 pytest -m slow      # 128² Blankenbach 2a run (~40 s)
 ```
