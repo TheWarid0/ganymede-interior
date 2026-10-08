@@ -14,8 +14,8 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 2 | 2D Stokes convection on a staggered grid, T-dependent viscosity | Analytic Stokes flow (order 2, div v ≈ 0); Blankenbach et al. (1989) 1a and 2a within 0.05 % | ✅ |
 | 2d | Real ice Ih: Arrhenius diffusion creep (capped), k = 651/T, equilibrium shell thickness | k(T) conduction analytic; cap-insensitivity; transient = steady | 🟡 in progress |
 | 3a | Stokes on PETSc: symmetric saddle point, FGMRES + Schur field split | Analytic Stokes; mesh- and contrast-independent iterations (≤ 11 up to η contrast 10⁸) | ✅ |
-| 3b | DMStag assembly + geometric multigrid | Same answers as 3a; O(N) velocity solve | ⬜ |
-| 3c | MPI-parallel runs | 1 vs 4 processes identical | ⬜ |
+| 3b | Native DMStag assembly + geometric multigrid on the velocity block | Matrix identical to SciPy assembly; 4 outer / 6 inner iterations from 32² to 512²; 10/5 at η contrast 10⁸ | ✅ |
+| 3c | MPI-parallel runs (`scripts/parallel_stokes.py`) | 1, 2, 4 processes: same iterations, same solution (1e-13) | ✅ |
 | 3 | Two-phase convection in the high-pressure ice layer | Literature setups | ⬜ |
 | 3d | 3D DMStag Stokes and convection | 3D analytic; Busse et al. (1994) | ⬜ |
 
