@@ -17,7 +17,8 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 3b | Native DMStag assembly + geometric multigrid on the velocity block | Matrix identical to SciPy assembly; 4 outer / 6 inner iterations from 32² to 512²; 10/5 at η contrast 10⁸ | ✅ |
 | 3c | MPI-parallel runs (`scripts/parallel_stokes.py`) | 1, 2, 4 processes: same iterations, same solution (1e-13) | ✅ |
 | 3 | Two-phase convection in the high-pressure ice layer | Literature setups | ⬜ |
-| 3d | 3D DMStag Stokes and convection | 3D analytic; Busse et al. (1994) | ⬜ |
+| 3d | 3D DMStag Stokes (MPI, geometric multigrid) | 3D analytic: order 2.0, div v ≈ 1e-15; 4 outer / 6 inner iterations; 3D = 2D when nothing varies in y (η contrast up to 10⁸); 1 vs 2 processes identical | ✅ |
+| 3e | 3D convection (energy equation on DMStag) | Busse et al. (1994) 3D benchmark | ⬜ |
 
 ## First results (pure-water H₂O layer, self-consistent with M and C/MR²)
 
