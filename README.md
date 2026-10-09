@@ -12,7 +12,7 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 0b | Self-consistent H₂O layer: SeaFreeze phases, conductive ice Ih shell, adiabatic ocean / HP ice | Closed-form k = a/T shell; M and C/MR² recovered | ✅ (PlanetProfile comparison pending) |
 | 1 | 1D two-phase compaction (McKenzie equations) | Solitary porosity waves: second-order convergence, c = 2A + 1, mass conservation | ✅ |
 | 2 | 2D Stokes convection on a staggered grid, T-dependent viscosity | Analytic Stokes flow (order 2, div v ≈ 0); Blankenbach et al. (1989) 1a and 2a within 0.05 % | ✅ |
-| 2d | Real ice Ih: Arrhenius diffusion creep (capped), k = 651/T, equilibrium shell thickness | k(T) conduction analytic; cap-insensitivity; transient = steady | 🟡 in progress |
+| 2d | Real ice Ih: Arrhenius diffusion creep (capped), k = 651/T, equilibrium shell thickness | k(T) conduction analytic; cap-insensitivity; transient = steady; SeaFreeze melting curve | ✅ preliminary |
 | 3a | Stokes on PETSc: symmetric saddle point, FGMRES + Schur field split | Analytic Stokes; mesh- and contrast-independent iterations (≤ 11 up to η contrast 10⁸) | ✅ |
 | 3b | Native DMStag assembly + geometric multigrid on the velocity block | Matrix identical to SciPy assembly; 4 outer / 6 inner iterations from 32² to 512²; 10/5 at η contrast 10⁸ | ✅ |
 | 3c | MPI-parallel runs (`scripts/parallel_stokes.py`) | 1, 2, 4 processes: same iterations, same solution (1e-13) | ✅ |
@@ -45,17 +45,28 @@ Porosity waves carry water upward in discrete pulses. For rough ice VI parameter
 
 Richardson-extrapolated from 64² and 128² grids.
 
-### Ice Ih shell: does it convect? (Stage 2d)
+### Ice Ih shell: how thick is it? (Stage 2d, preliminary)
 
-Heat leaving the top of a shell of thickness D (q_in = 15 mW m⁻², T_b ≈ 268 K, Arrhenius diffusion creep, k = 651/T, 64²):
+For each shell thickness D the base sits at the ice Ih melting point at the base pressure (SeaFreeze), the surface at 110 K; viscosity is Arrhenius diffusion creep, k = 651/T, steady 2D convection at 64², aspect 1. The shell is in equilibrium where the heat leaving the top, q_out(D), equals the heat arriving from below, q_in. Ice Ih cannot float deeper than ≈ 156 km: below that the base would be ice III.
 
-| D | 0.1 mm grains: q_out | 1 mm grains: q_out |
-|---|---|---|
-| 15 km | 38.7 (conductive) | 38.7 (conductive) |
-| 39 km | 29.2 (Nu 1.96) | 14.9 (conductive) |
-| 90 km | 23.3 (Nu 3.61) | 9.0 (Nu 1.39) |
+![q_out vs shell thickness](figures/shell_equilibrium.png)
 
-The equilibrium shell sits where q_out = q_in: ≈ 39 km (conductive) for 1 mm grains, but beyond 90 km (convecting) for 0.1 mm grains. Base temperature is still held fixed; the pressure-dependent melting point and the ice Ih–III limit come next.
+Equilibrium thickness (km):
+
+| q_in (mW m⁻²) | 0.1 mm grains | 0.3 mm grains | 1 mm grains |
+|---|---|---|---|
+| 5 | ≥ 156 (Ih–III limit) | ≥ 156 (Ih–III limit) | 112–123 (bistable)* |
+| 10 | ≥ 156 (Ih–III limit) | 107 | 58 (cond.) |
+| 15 | 124 | 61 | 39 (cond.) |
+| 20 | 86 | 29 (cond.) | 29 (cond.) |
+| 30 | 39 | 20 (cond.) | 20 (cond.) |
+| 40 | 21 | 15 (cond.) | 15 (cond.) |
+
+\* Around 110–125 km the 1 mm shell has two stable steady states (conductive and weakly convecting, Nu ≈ 1.1); which one it is in depends on its history.
+
+Reading: grain size matters more than heat flux. Fine-grained (0.1 mm) ice convects efficiently, so the shell must grow thick (≈ 90–125 km at 15–20 mW m⁻²) before it loses only what it receives, and at ≤ 10 mW m⁻² it reaches the Ih–III limit. Coarse-grained (1 mm) ice barely convects, and the shell settles at a few tens of km.
+
+Caveats (why "preliminary"): ρ, g, α held fixed through the shell; diffusion creep only (no grain-boundary sliding or dislocation creep); pure water (no salts or NH₃, which lower T_b); no tidal heating; steady states only; aspect ratio 1 and 64² grid. Reproduce with `python scripts/shell_equilibrium.py run --grain 0.1` (one grain size, ~20 min) and `python scripts/shell_equilibrium.py plot results/shell_equilibrium.json`.
 
 ## Install
 
