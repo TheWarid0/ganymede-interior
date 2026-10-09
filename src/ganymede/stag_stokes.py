@@ -56,7 +56,7 @@ class StagIndex:
         return J.ravel(), I.ravel()
 
 
-def assemble_stokes(dm, nx, nz, dx, dz, eta_c, eta_n, rho_vz, wall_scale):
+def assemble_stokes(dm, nx, nz, dx, dz, eta_c, eta_n, rho_vz, wall_scale, noslip_bottom=False):
     """Build the symmetric Stokes matrix and RHS on DMStag. eta_c (nz,nx), eta_n (nz+1,nx+1), rho_vz (nz+1,nx)
     are full arrays (every rank reads only its ghosted patch)."""
     ix = StagIndex(dm, nx, nz)
@@ -87,6 +87,9 @@ def assemble_stokes(dm, nx, nz, dx, dz, eta_c, eta_n, rho_vz, wall_scale):
     put(rr, rr, eB / dz**2); put(rr, ix("vx", jj - 1, ii), -eB / dz**2)
     put(rr, ix("vz", jj, ii), eB / (dx * dz)); put(rr, ix("vz", jj, ii - 1), -eB / (dx * dz))
     put(r, ix("P", j, i), 1.0 / dx); put(r, ix("P", j, i - 1), -1.0 / dx)
+    if noslip_bottom:                                   # vx = 0 on the bottom wall via a mirrored ghost
+        m = j == 0
+        put(r[m], r[m], 2 * eta_n[0, i[m]] / dz**2)
 
     # --- z-momentum ---
     j, i = ix.owned("vz")
@@ -142,14 +145,14 @@ def _block_offset(n_local, comm):
 
 
 def native_stokes_solve(nx, nz, eta_c, eta_n, rho_vz, L=1.0, H=1.0, rtol=1e-10, u_rtol=1e-8, max_it=300,
-                        comm=None):
+                        comm=None, noslip_bottom=False):
     """Assemble on DMStag (each rank its own patch) and solve with FGMRES + Schur fieldsplit,
     geometric multigrid on the velocity block. Returns (dm, x, index helper, stats)."""
     dx, dz = L / nx, H / nz
     dm = make_dmstag(nx, nz, L, H, comm=comm)
     dm_v = make_dmstag(nx, nz, L, H, dofs=(0, 1, 0), comm=comm)
     wall_scale = 2.0 * np.mean(eta_c) * (1 / dx**2 + 1 / dz**2) * 2.0
-    A, b, ix = assemble_stokes(dm, nx, nz, dx, dz, eta_c, eta_n, rho_vz, wall_scale)
+    A, b, ix = assemble_stokes(dm, nx, nz, dx, dz, eta_c, eta_n, rho_vz, wall_scale, noslip_bottom=noslip_bottom)
     pcomm = dm.getComm()
 
     jv, iv = ix.owned("vx"); jz, iz = ix.owned("vz"); jp, ip = ix.owned("P")

@@ -9,13 +9,17 @@ from petsc4py import PETSc
 from .stokes import stokes_matrix_fast, unpack
 
 
-def stokes_symmetric(g, eta_c, eta_n):
+def stokes_symmetric(g, eta_c, eta_n, noslip_bottom=False):
     """The same staggered-grid discretisation, rearranged for iterative solvers:
       1. no pinned pressure: every cell keeps its continuity equation (the solver handles the constant via a null space)
       2. all rows multiplied by -1 -> velocity block symmetric positive definite, whole system [[K, G], [G^T, 0]]
       3. wall velocities (= 0) decoupled: their columns removed, their rows scaled like the interior
+    With noslip_bottom, vx = 0 on the bottom wall (mirrored ghost: an extra -2 eta / dz^2 on the diagonal).
     Returns the matrix A, the row signs s (apply to the RHS too), and the wall-velocity rows."""
     A = stokes_matrix_fast(g, eta_c, eta_n).tocsr()
+    if noslip_bottom:
+        rows = g.ivx(0, np.arange(1, g.nx))
+        A = A + sp.csr_matrix((-2 * eta_n[0, 1:g.nx] / g.dz**2, (rows, rows)), shape=A.shape)
     nv = g.n_vx + g.n_vz
     # 1. restore the continuity equation of cell (0, 0)
     r0 = nv
@@ -40,12 +44,14 @@ def stokes_symmetric(g, eta_c, eta_n):
     return A, s, walls
 
 
-def petsc_stokes_solve(g, eta_c, eta_n, rho_vz, rtol=1e-10, u_pc="ilu", u_rtol=1e-8, max_it=300):
+def petsc_stokes_solve(g, eta_c, eta_n, rho_vz, rtol=1e-10, u_pc="ilu", u_rtol=1e-8, max_it=300,
+                       noslip_bottom=False, x0=None):
     """FGMRES on the full system, preconditioned by a Schur-complement split:
        velocity block K      -> inner CG + u_pc ('ilu' here; geometric multigrid later)
        Schur complement S    -> approximated by -diag(1/eta)  (the classic Stokes 'pressure mass matrix')
-       constant pressure     -> declared as a null space."""
-    A, s, walls = stokes_symmetric(g, eta_c, eta_n)
+       constant pressure     -> declared as a null space.
+    x0: optional initial guess (vx, vz, P flattened, e.g. the previous time step)."""
+    A, s, walls = stokes_symmetric(g, eta_c, eta_n, noslip_bottom=noslip_bottom)
     b = np.zeros(A.shape[0])
     bz = rho_vz.copy(); bz[0] = bz[-1] = 0.0
     b[g.n_vx:g.n_vx + g.n_vz] = bz.ravel()
@@ -74,6 +80,9 @@ def petsc_stokes_solve(g, eta_c, eta_n, rho_vz, rtol=1e-10, u_pc="ilu", u_rtol=1
 
     x, rhs = M.createVecRight(), M.createVecLeft()
     rhs.setArray(b)
+    if x0 is not None:
+        x.setArray(x0)
+        ksp.setInitialGuessNonzero(True)
     t0 = time.time(); ksp.solve(rhs, x); elapsed = time.time() - t0
     vx, vz, P = unpack(g, x.getArray().copy())
     return vx, vz, P, ksp.getIterationNumber(), ksp.getConvergedReason(), elapsed

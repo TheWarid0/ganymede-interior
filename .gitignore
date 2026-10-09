@@ -9,3 +9,4 @@ output/
 *.h5
 *.npz
 refs/
+*.pkl

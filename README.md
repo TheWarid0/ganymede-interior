@@ -22,6 +22,7 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 4a | Water percolation through ice, zero compaction length (Kalousová et al. 2018, Eq. 1c–d), 1D | Exact Riemann solutions (shock and rarefaction), converging with resolution; mass conserved to 1e-15 | ✅ |
 | 4b | Temperate-ice energy: melting, freezing, T ≤ T_m (operator split), 1D | Heated half-space (analytic); total energy (sensible + latent) conserved to 1e-11 | ✅ |
 | 4c | Non-convecting HP ice column: melt generation, percolation, refreezing | Melt-front arrival vs. energy balance (0.1 %); steady state q_s = conduction + latent heat of extracted water | ✅ |
+| 4d′ | 2D two-phase convection prototype (incompressible matrix, upwind advection), Kalousová et al. (2018) setup | Energy conserved to 1e-10 over 15 Myr; top temperate layer 17 km vs. her 16 km; basal melt layer not yet resolved | ✅ prototype |
 | 4d | Two-phase convection in 2D: mixture Stokes with melt source and bulk-viscosity term, porosity advection, temperate energy | Reproduce Kalousová et al. (2018) reference run | ⬜ |
 
 ## First results (pure-water H₂O layer, self-consistent with M and C/MR²)
@@ -68,7 +69,7 @@ Equilibrium thickness (km):
 
 Reading: grain size matters more than heat flux. Fine-grained (0.1 mm) ice convects efficiently, so the shell must grow thick (≈ 90–125 km at 15–20 mW m⁻²) before it loses only what it receives, and at ≤ 10 mW m⁻² it reaches the Ih–III limit. Coarse-grained (1 mm) ice barely convects, and the shell settles at a few tens of km.
 
-Caveats (why "preliminary"): ρ, g, α held fixed through the shell; diffusion creep only (no grain-boundary sliding or dislocation creep); pure water (no salts or NH₃, which lower T_b); no tidal heating; steady states only; aspect ratio 1 and 64² grid. Reproduce with `python scripts/shell_equilibrium.py run --grain 0.1` (one grain size, ~20 min) and `python scripts/shell_equilibrium.py plot results/shell_equilibrium.json`.
+Caveats (why "preliminary"): ρ, g, α held fixed through the shell; diffusion creep only (no grain-boundary sliding or dislocation creep); pure water (no salts or NH₃, which lower T_b); no tidal heating; steady states only; 64² grid. Box width checked once: for 0.1 mm grains at 120 km, a box twice as wide (128 × 64, time-dependent run started from the convective state) keeps q_out = 15.45 mW m⁻², identical to aspect 1. Reproduce with `python scripts/shell_equilibrium.py run --grain 0.1` (one grain size, ~20 min) and `python scripts/shell_equilibrium.py plot results/shell_equilibrium.json`.
 
 ### Melt in the high-pressure ice layer, without convection (Stage 4c)
 
@@ -81,6 +82,28 @@ The zero-compaction-length model of Kalousová et al. (2018) in a 1D column: 200
 - The temperate ice holds just 1.07 % water, barely above the 1 % percolation threshold: the permeability law, not the heat flux, fixes how wet it is.
 
 This is the no-convection end-member, a test bed for the two-phase pieces. With μ₀ = 10¹⁵ Pa s the layer convects vigorously, which is Stage 4d. Reproduce with `python scripts/hp_column.py`.
+
+### Two-phase convection in the high-pressure ice layer (Stage 4d, prototype)
+
+Kalousová et al. (2018) reference setup in 2D: 200 km of ice VI (aspect 2), 20 mW m⁻² from the silicates, μ₀ = 10¹⁵ Pa s, percolation threshold 1 %, starting at the ocean-interface melting point. Hot plumes rise from the silicate interface; where ice reaches its melting point it melts, the water percolates up and leaves into the ocean, and water that meets colder ice refreezes. 64 × 128 cells (3 km), 15 Myr.
+
+![T − T_m and porosity snapshots](figures/hp_convection_snapshots.png)
+
+![heat budget](figures/hp_convection_budget.png)
+
+| | This model | Kalousová et al. (2018), run 1 |
+|---|---|---|
+| Statistical steady state reached | ~4 Myr (mean T constant at 311.0 K from then on) | ~10 Myr |
+| Heat leaving as meltwater | 98–99 % of q_s; conduction 0.18 mW m⁻² | "the majority" (conduction ~2 orders of magnitude smaller) |
+| Top temperate layer | 16.5–17.8 km, ~0.9 % water | ~16 km, φ_av ~1 % |
+| Interior | ~10 K below the melting point; melt only in plume heads | "well below the melting point"; melt in some plume heads |
+| Thin temperate layer at the silicate interface | **missing** | present, φ ≲ 1 % |
+
+- First melt reaches the ocean after ~0.5 Myr, and after ~4 Myr essentially all the basal heat leaves as meltwater, in bursts as plume heads arrive.
+- In a conductive layer (Stage 4c) the same heat takes 15 Myr to open a path to the ocean; convection does it ~30 times faster.
+- The missing basal melt is a resolution problem: with a 3 km bottom cell and q_s fixed, the interface is ~20 K hotter than the first cell centre, so the interface would be above the melting point while every cell centre stays below it. Kalousová et al. refine to 1 km at the bottom.
+
+Prototype limitations (Stage 4d proper removes them): the ice matrix is incompressible (no volume change on melting, no bulk-viscosity term); first-order upwind advection; 3 km cells (bottom boundary layer barely resolved). The Stokes solve uses the PETSc DMStag multigrid solver (no-slip bottom added): 0.2 s at 64 × 128, 1.1 s at 128 × 256, 6.2 s at 256 × 512, matching the direct solver to 4e-7. Reproduce with `python scripts/hp_convection.py run --t_end 15` then `python scripts/hp_convection.py plot results/hp_convection_ref.pkl --times 1 3 10 15 --phimax 1.5` (continue a run with `--restart`).
 
 ## Install
 

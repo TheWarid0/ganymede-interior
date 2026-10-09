@@ -68,3 +68,45 @@ def test_column_breakthrough_and_steady_state():
     assert h["water_flux"][-1] * P.rho_w * P.L + h["q_top"][-1] == pytest.approx(P.q_s, rel=1e-3)
     assert h["q_top"][-1] == pytest.approx(q_cond_melting_curve, rel=0.02)
     assert np.abs(h["energy_error"]).max() < 1e-9
+
+
+def test_2d_prototype_conserves_energy_and_water():
+    """A few hundred kyr of 2D two-phase convection on a coarse grid: energy (sensible + latent)
+    balances the boundary fluxes and the extracted water, porosity never drops below background,
+    and the ice never exceeds the melting point."""
+    from ganymede.twophase2d import run
+    r = run(nx=24, nz=12, t_end_myr=1.5, verbose=False)
+    h = r["hist"]
+    assert max(abs(x["energy_error"]) for x in h) < 1e-9
+    assert r["phi"].min() >= P.phi_bg - 1e-12
+    assert r["snaps"][-1]["dT"].max() <= 1e-9
+    assert h[-1]["vrms_cm_yr"] > 1.0      # it convects
+
+
+def test_2d_stag_solver_matches_direct():
+    """No-slip-bottom Stokes on PETSc DMStag (geometric multigrid) = SciPy direct solve."""
+    pytest.importorskip("petsc4py")
+    from ganymede.stokes import Grid
+    from ganymede.twophase2d import Scales, ice_velocity
+    sc = Scales(P)
+    g = Grid(32, 16, L=2.0)
+    rng = np.random.default_rng(3)
+    Zc = np.broadcast_to(g.zc[:, None], (16, 32))
+    theta = np.clip(1 - Zc - 0.3 + 0.05 * rng.standard_normal((16, 32)), 0, None)
+    phi = P.phi_bg + 0.01 * rng.random((16, 32))
+    vx1, vz1, _ = ice_velocity(g, theta, phi, sc, solver="direct")
+    vx2, vz2, _ = ice_velocity(g, theta, phi, sc, solver="stag")
+    scale = max(np.abs(vx1).max(), np.abs(vz1).max())
+    assert np.abs(vx2 - vx1).max() < 1e-5 * scale
+    assert np.abs(vz2 - vz1).max() < 1e-5 * scale
+    # no-slip bottom: the flow next to the bottom is much slower than with a free-slip bottom
+    from scipy.sparse.linalg import spsolve
+    from ganymede.ice import corner_T
+    from ganymede.stokes import stokes_matrix_fast, unpack
+    from ganymede.twophase2d import _centre_to_vz
+    Zn = np.broadcast_to(g.zn[:, None], (17, 33))
+    A = stokes_matrix_fast(g, sc.viscosity(theta, Zc), sc.viscosity(corner_T(theta), Zn))
+    rhs = np.zeros(A.shape[0])
+    rhs[g.n_vx:g.n_vx + g.n_vz] = _centre_to_vz(-sc.Ra * theta - sc.Rphi * phi).ravel()
+    vx_free, _, _ = unpack(g, spsolve(A, rhs))
+    assert np.abs(vx1[0]).mean() < 0.5 * np.abs(vx_free[0]).mean()
