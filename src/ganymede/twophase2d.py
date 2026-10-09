@@ -90,7 +90,7 @@ def ice_velocity(g, theta, phi, sc, solver="direct"):
     return vx, vz, eta_c
 
 
-def energy_matrix(g, vx, vz, dt, Qb):
+def energy_matrix(g, vx, vz, dt, Qb, capped=None):
     """Implicit step  (theta' - theta)/dt + div(v theta) - lap theta = 0, upwind advection.
     Bottom: -dtheta/dz = Qb; top: theta = 0; sides insulating. Returns A, b_extra."""
     nx, nz, dx, dz = g.nx, g.nz, g.dx, g.dz
@@ -114,9 +114,38 @@ def energy_matrix(g, vx, vz, dt, Qb):
         put(r, nb, np.minimum(un, 0) / h - 1 / h**2)
     put(idx[-1], idx[-1], 2 / dz**2)                    # top wall theta = 0 (ghost)
     b = np.zeros(nx * nz)
-    b[idx[0]] = Qb / dz                                 # bottom heat flux
+    capped = np.zeros(nx, bool) if capped is None else capped
+    b[idx[0][~capped]] = Qb / dz                        # bottom heat flux
+    put(idx[0][capped], idx[0][capped], 2 / dz**2)      # capped columns: interface held at theta_m = 1
+    b[idx[0][capped]] = 2 * 1.0 / dz**2
     A = sp.csc_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))), shape=(nx * nz,) * 2)
     return A, b
+
+
+def energy_step(g, vx, vz, theta, dt, Qb, basal_cap=True):
+    """Implicit energy step with the basal interface capped at the melting point.
+
+    The silicate interface cannot be hotter than T_m. Where the flux condition would put it
+    above (theta_0 + Qb dz/2 > 1), the interface is held at theta = 1 instead, the ice conducts
+    2 (1 - theta_0)/dz into the column, and the rest of the basal heat melts ice at the interface.
+    The set of capped columns is found iteratively (an active-set loop, usually 1-3 passes).
+    Returns theta and the basal melting heat flux per column (non-dimensional, >= 0)."""
+    nx, nz, dz = g.nx, g.nz, g.dz
+    capped = np.zeros(nx, bool)
+    for _ in range(20):
+        A, b = energy_matrix(g, vx, vz, dt, Qb, capped)
+        new = spsolve(A, theta.ravel() / dt + b).reshape(nz, nx)
+        if not basal_cap:
+            return new, np.zeros(nx)
+        conducted = 2 * (1.0 - new[0]) / dz
+        want = capped.copy()
+        want[~capped & (new[0] + Qb * dz / 2 > 1.0)] = True     # flux would overheat the interface
+        want[capped & (conducted > Qb)] = False                 # interface no longer needs the cap
+        if np.array_equal(want, capped):
+            break
+        capped = want
+    melt = np.where(capped, Qb - conducted, 0.0)
+    return new, melt
 
 
 def phase_change(theta, phi, theta_m, sc):
@@ -162,7 +191,7 @@ def percolate2d(phi, dz, dt, p, vscale, cfl=0.9):
 
 def run(p=None, nx=200, nz=100, mu0=1e15, t_end_myr=20.0, cfl=0.5, snap_myr=(), log_every=20,
         theta0=None, phi0=None, verbose=True, wall_limit=None, solver="direct",
-        t0_myr=0.0):
+        t0_myr=0.0, basal_cap=True, dt_max=1e-4):
     """Time-dependent two-phase convection. Returns dict with grid, scales, history, snapshots."""
     p = p or HPIce()
     sc = Scales(p, mu0=mu0)
@@ -184,9 +213,9 @@ def run(p=None, nx=200, nz=100, mu0=1e15, t_end_myr=20.0, cfl=0.5, snap_myr=(), 
     while t < t_end - 1e-15:
         vx, vz, eta = ice_velocity(g, theta, phi, sc, solver=solver)
         vmax = max(np.abs(vx).max(), np.abs(vz).max(), 1e-12)
-        dt = min(cfl * min(g.dx, g.dz) / vmax, t_end - t, 1e-4)
-        A, b = energy_matrix(g, vx, vz, dt, sc.Qb)
-        theta = spsolve(A, theta.ravel() / dt + b).reshape(nz, nx)
+        dt = min(cfl * min(g.dx, g.dz) / vmax, t_end - t, dt_max)
+        theta, melt = energy_step(g, vx, vz, theta, dt, sc.Qb, basal_cap=basal_cap)
+        phi[0] += sc.S * melt * dt / g.dz                # basal melt goes into the bottom cell
         q_top = 2 * theta[-1] / g.dz                     # -dtheta/dz at the top, per column
         theta, phi = phase_change(theta, phi, theta_m, sc)
         phi = advect_porosity(g, phi, vx, vz, dt)
@@ -200,7 +229,10 @@ def run(p=None, nx=200, nz=100, mu0=1e15, t_end_myr=20.0, cfl=0.5, snap_myr=(), 
         # dimensional diagnostics: heat flux [W/m^2] = nondim flux * k dT / H
         qd = p.k * sc.dT / p.H
         rec = dict(t_myr=t * sc.t / YEAR / 1e6, step=step,
-                   q_cond=q_top.mean() * qd, q_water=w.sum() * g.dx / sc.S / g.L / dt * qd,
+                   q_cond=q_top.mean() * qd, q_basal_melt=melt.mean() * qd,
+                   basal_wet=float(np.mean(phi[0] > p.phi_bg + 1e-6)),
+                   basal_capped=float(np.mean(melt > 0)),
+                   q_water=w.sum() * g.dx / sc.S / g.L / dt * qd,
                    vrms_cm_yr=vrms(vx, vz) * sc.v * YEAR * 100,
                    phi_mean=phi.mean(), phi_max=phi.max(),
                    temperate=float(np.mean(theta >= theta_m - 1e-9)),
@@ -213,7 +245,7 @@ def run(p=None, nx=200, nz=100, mu0=1e15, t_end_myr=20.0, cfl=0.5, snap_myr=(), 
             snaps_left.pop(0)
         if verbose and step % log_every == 0:
             print(f"step {step:5d} t={rec['t_myr']:7.3f} Myr  q_cond={rec['q_cond']*1e3:6.2f} "
-                  f"q_water={rec['q_water']*1e3:6.2f} mW/m2  vrms={rec['vrms_cm_yr']:.3g} cm/yr  "
+                  f"q_water={rec['q_water']*1e3:6.2f} basal_melt={rec['q_basal_melt']*1e3:5.2f} mW/m2  wet_base={rec['basal_wet']:.2f}  vrms={rec['vrms_cm_yr']:.3g} cm/yr  "
                   f"phi_mean={rec['phi_mean']*100:.3f}% max={rec['phi_max']*100:.2f}%  temperate={rec['temperate']:.3f}  "
                   f"T_mean={rec['T_mean']:.2f}  Eerr={rec['energy_error']:.1e}  wall={time.time()-w0:.0f}s", flush=True)
         if wall_limit and time.time() - w0 > wall_limit:

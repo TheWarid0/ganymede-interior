@@ -127,6 +127,16 @@ def cmd_plot(a):
     ax.plot(t, smooth(qw) + qc, color=INK, lw=1, label="total out")
     ax.plot(t, par["qs"] - smooth(qw) - qc, color="#1baf7a", lw=1.5, label="stored: warming the layer")
     ax.set_xlim(0, t[-1])
+    if any("q_basal_melt" in x for x in h):           # runs with the basal melting rule
+        on = np.array(["q_basal_melt" in x for x in h])
+        qb = np.array([x["q_basal_melt"] for x in h if "q_basal_melt" in x]) * 1e3
+        ax.plot(t[on], smooth(qb), color="#eb6834", lw=1.2, ls=(0, (2, 2)),
+                label="melting ice at the silicate interface")
+        if not on[0]:
+            t_on = t[on][0]
+            ax.axvline(t_on, color=MUTED, lw=0.8)
+            ax.text(t_on, par["qs"] * 2.4, " basal melting\n rule on", color=MUTED,
+                    fontsize=8, va="top")
     stored = par["qs"] - smooth(qw) - qc
     ax.set_ylim(min(0, stored.min() * 1.1), max(par["qs"], (smooth(qw) + qc).max()) * 1.08)
     ax.axhline(0, color=MUTED, lw=0.6)

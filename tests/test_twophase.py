@@ -110,3 +110,22 @@ def test_2d_stag_solver_matches_direct():
     rhs[g.n_vx:g.n_vx + g.n_vz] = _centre_to_vz(-sc.Ra * theta - sc.Rphi * phi).ravel()
     vx_free, _, _ = unpack(g, spsolve(A, rhs))
     assert np.abs(vx1[0]).mean() < 0.5 * np.abs(vx_free[0]).mean()
+
+
+@pytest.mark.slow
+def test_2d_without_convection_reproduces_column():
+    """With a huge viscosity (no flow) the 2D model with the basal melting rule must reproduce
+    the 1D column: melt reaches the ocean when the energy balance says, and at steady state the
+    basal heat leaves as meltwater."""
+    from ganymede.twophase2d import Scales, run
+    sc = Scales(P, mu0=1e25)
+    r = run(P, nx=4, nz=50, mu0=1e25, t_end_myr=18, verbose=False, dt_max=25e3 * YEAR / sc.t)
+    h = r["hist"]
+    t = np.array([x["t_myr"] for x in h])
+    qw = np.array([x["q_water"] for x in h])
+    _, t_pred = front_height_energy_balance(0.0, P)
+    assert t[np.argmax(qw > 1e-3)] == pytest.approx(t_pred / YEAR / 1e6, rel=0.02)
+    q_cond_melting_curve = P.k * (P.Tm_bot - P.Tm_top) / P.H
+    assert qw[-1] + h[-1]["q_cond"] == pytest.approx(P.q_s, rel=2e-3)
+    assert h[-1]["q_cond"] == pytest.approx(q_cond_melting_curve, rel=0.05)
+    assert max(abs(x["energy_error"]) for x in h) < 1e-10

@@ -22,7 +22,7 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 4a | Water percolation through ice, zero compaction length (Kalousová et al. 2018, Eq. 1c–d), 1D | Exact Riemann solutions (shock and rarefaction), converging with resolution; mass conserved to 1e-15 | ✅ |
 | 4b | Temperate-ice energy: melting, freezing, T ≤ T_m (operator split), 1D | Heated half-space (analytic); total energy (sensible + latent) conserved to 1e-11 | ✅ |
 | 4c | Non-convecting HP ice column: melt generation, percolation, refreezing | Melt-front arrival vs. energy balance (0.1 %); steady state q_s = conduction + latent heat of extracted water | ✅ |
-| 4d′ | 2D two-phase convection prototype (incompressible matrix, upwind advection), Kalousová et al. (2018) setup | Energy conserved to 1e-10 over 15 Myr; top temperate layer 17 km vs. her 16 km; basal melt layer not yet resolved | ✅ prototype |
+| 4d′ | 2D two-phase convection prototype (incompressible matrix, upwind advection), Kalousová et al. (2018) setup | Energy conserved to 1e-10 over 19 Myr; top temperate layer 17–18 km vs. her 16 km; basal melting rule reproduces the 1D column; basal layer thinner than a cell | ✅ prototype |
 | 4d | Two-phase convection in 2D: mixture Stokes with melt source and bulk-viscosity term, porosity advection, temperate energy | Reproduce Kalousová et al. (2018) reference run | ⬜ |
 
 ## First results (pure-water H₂O layer, self-consistent with M and C/MR²)
@@ -85,7 +85,7 @@ This is the no-convection end-member, a test bed for the two-phase pieces. With 
 
 ### Two-phase convection in the high-pressure ice layer (Stage 4d, prototype)
 
-Kalousová et al. (2018) reference setup in 2D: 200 km of ice VI (aspect 2), 20 mW m⁻² from the silicates, μ₀ = 10¹⁵ Pa s, percolation threshold 1 %, starting at the ocean-interface melting point. Hot plumes rise from the silicate interface; where ice reaches its melting point it melts, the water percolates up and leaves into the ocean, and water that meets colder ice refreezes. 64 × 128 cells (3 km), 15 Myr.
+Kalousová et al. (2018) reference setup in 2D: 200 km of ice VI (aspect 2), 20 mW m⁻² from the silicates, μ₀ = 10¹⁵ Pa s, percolation threshold 1 %, starting at the ocean-interface melting point. Hot plumes rise from the silicate interface; where ice reaches its melting point it melts, the water percolates up and leaves into the ocean, and water that meets colder ice refreezes. 64 × 128 cells (3 km), 19 Myr; the basal melting rule (below) switched on at 15 Myr.
 
 ![T − T_m and porosity snapshots](figures/hp_convection_snapshots.png)
 
@@ -93,17 +93,17 @@ Kalousová et al. (2018) reference setup in 2D: 200 km of ice VI (aspect 2), 20 
 
 | | This model | Kalousová et al. (2018), run 1 |
 |---|---|---|
-| Statistical steady state reached | ~4 Myr (mean T constant at 311.0 K from then on) | ~10 Myr |
+| Statistical steady state reached | ~4 Myr (mean T 311.0–311.2 K from then on) | ~10 Myr |
 | Heat leaving as meltwater | 98–99 % of q_s; conduction 0.18 mW m⁻² | "the majority" (conduction ~2 orders of magnitude smaller) |
-| Top temperate layer | 16.5–17.8 km, ~0.9 % water | ~16 km, φ_av ~1 % |
+| Top temperate layer | 16.5–18 km, ~0.9 % water | ~16 km, φ_av ~1 % |
 | Interior | ~10 K below the melting point; melt only in plume heads | "well below the melting point"; melt in some plume heads |
-| Thin temperate layer at the silicate interface | **missing** | present, φ ≲ 1 % |
+| Melting at the silicate interface | ~half the basal heat (10.6 of 20 mW m⁻²) melts ice at the interface; the water refreezes within the first 3 km cell, so the layer is thinner than one cell | thin temperate layer, T_av = T_m, φ ≲ 1 % |
 
 - First melt reaches the ocean after ~0.5 Myr, and after ~4 Myr essentially all the basal heat leaves as meltwater, in bursts as plume heads arrive.
 - In a conductive layer (Stage 4c) the same heat takes 15 Myr to open a path to the ocean; convection does it ~30 times faster.
-- The missing basal melt is a resolution problem: with a 3 km bottom cell and q_s fixed, the interface is ~20 K hotter than the first cell centre, so the interface would be above the melting point while every cell centre stays below it. Kalousová et al. refine to 1 km at the bottom.
+- Basal melting rule: the silicate interface cannot be hotter than its melting point. Where the fixed heat flux would push it above, the interface is held at T_m and the heat the ice cannot conduct away melts ice there (found column by column with an active-set loop; exact energy conservation kept). Without it, the 3 km bottom cell hid an interface ~20 K above melting. With convection switched off, the 2D model with this rule reproduces the 1D column (melt reaches the ocean at 14.97 vs. 15.14 Myr).
 
-Prototype limitations (Stage 4d proper removes them): the ice matrix is incompressible (no volume change on melting, no bulk-viscosity term); first-order upwind advection; 3 km cells (bottom boundary layer barely resolved). The Stokes solve uses the PETSc DMStag multigrid solver (no-slip bottom added): 0.2 s at 64 × 128, 1.1 s at 128 × 256, 6.2 s at 256 × 512, matching the direct solver to 4e-7. Reproduce with `python scripts/hp_convection.py run --t_end 15` then `python scripts/hp_convection.py plot results/hp_convection_ref.pkl --times 1 3 10 15 --phimax 1.5` (continue a run with `--restart`).
+Prototype limitations (Stage 4d proper removes them): the ice matrix is incompressible (no volume change on melting, no bulk-viscosity term); first-order upwind advection; 3 km cells (bottom boundary layer barely resolved). The Stokes solve uses the PETSc DMStag multigrid solver (no-slip bottom added): 0.2 s at 64 × 128, 1.1 s at 128 × 256, 6.2 s at 256 × 512, matching the direct solver to 4e-7. Reproduce with `python scripts/hp_convection.py run --t_end 15` then `python scripts/hp_convection.py plot results/hp_convection_ref.pkl --times 1 3 10 19 --phimax 1.5` (continue a run with `--restart`).
 
 ## Install
 
