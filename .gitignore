@@ -10,3 +10,4 @@ output/
 *.npz
 refs/
 *.pkl
+paraview/

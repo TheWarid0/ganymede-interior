@@ -145,7 +145,7 @@ def _block_offset(n_local, comm):
 
 
 def native_stokes_solve(nx, nz, eta_c, eta_n, rho_vz, L=1.0, H=1.0, rtol=1e-10, u_rtol=1e-8, max_it=300,
-                        comm=None, noslip_bottom=False):
+                        comm=None, noslip_bottom=False, x0=None):
     """Assemble on DMStag (each rank its own patch) and solve with FGMRES + Schur fieldsplit,
     geometric multigrid on the velocity block. Returns (dm, x, index helper, stats)."""
     dx, dz = L / nx, H / nz
@@ -205,6 +205,9 @@ def native_stokes_solve(nx, nz, eta_c, eta_n, rho_vz, L=1.0, H=1.0, rtol=1e-10, 
     pmg.setFromOptions()
 
     x = dm.createGlobalVec()
+    if x0 is not None:                       # warm start, e.g. from the previous time step (same grid)
+        x.setArray(x0.getArray())
+        ksp.setInitialGuessNonzero(True)
     t0 = time.time(); ksp.solve(b, x); elapsed = time.time() - t0
     stats = dict(outer=ksp.getIterationNumber(), inner=ku.getIterationNumber(),
                  reason=ksp.getConvergedReason(), time=elapsed, levels=levels, nproc=pcomm.getSize())

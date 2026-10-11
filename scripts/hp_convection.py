@@ -24,6 +24,8 @@ def cmd_run(a):
     from ganymede.twophase2d import run
     p = HPIce(H=a.H * 1e3, q_s=a.qs * 1e-3, phi_c=a.phi_c / 100)
     snaps = tuple(float(s) for s in a.snaps)
+    if a.snap_every:                                   # regular frames, e.g. for a ParaView animation
+        snaps = tuple(sorted(set(snaps) | set(np.round(np.arange(a.snap_every, a.t_end + 1e-9, a.snap_every), 6))))
     prev, kw = None, {}
     if a.restart:                                     # continue a previous run from its final state
         prev = pickle.load(open(a.restart, "rb"))
@@ -168,6 +170,8 @@ if __name__ == "__main__":
     r.add_argument("--nz", type=int, default=64)
     r.add_argument("--t_end", type=float, default=25.0, help="[Myr]")
     r.add_argument("--snaps", nargs="*", default=[1, 3, 6, 10, 15, 20, 25])
+    r.add_argument("--snap_every", type=float, default=None,
+                   help="also save a snapshot every this many Myr (e.g. 0.1 for an animation)")
     r.add_argument("--solver", choices=["direct", "stag"], default="stag",
                    help="Stokes solver: SciPy direct or PETSc DMStag multigrid (needs petsc4py)")
     r.add_argument("--wall", type=float, default=None, help="stop after this many seconds")
