@@ -26,6 +26,7 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 4d | Two-phase convection in 2D: mixture Stokes with melt source and bulk-viscosity term, porosity advection, temperate energy | Reproduce Kalousová et al. (2018) reference run | ⬜ |
 | 5 | Two-phase ice Ih shell over the ocean: meltwater sinks and drains into the ocean, IAPWS melting curve, k(T), Arrhenius creep, Maxwell tidal heating, ocean-side Stefan diagnostic | Conductive shell (analytic, 0.2 %); Stage 2d convective heat flow held to 0.4 %; tidal heating peaks at η = μ/ω; energy conserved to 1e-12 | ✅ first version |
 | 6a | Salty hydrosphere evolution (column): ice Ih shell, two-layer ocean (well-mixed + sinking brine), HP ice; salt rejection at the mushy shell base, freezing-point depression, overturn of the brine layer; radius from mass balance | Liquidus vs SeaFreeze / Kalousová (0.5 K); seawater freezing point; mass to 1e-6; salt to 1e-16; energy to 1e-14 (well-mixed), 1e-2 (brine cycles) | ✅ first version |
+| 7a | Stokes in a 2D annulus sector (polar staggered grid, arbitrary radial refinement, variable viscosity, free slip) | Manufactured solution with exact free-slip walls: 2nd order in v_r, v_θ, P on thick and 150 km annuli, uniform and refined grids; div v ≈ 1e-12 | ✅ |
 
 ## First results (pure-water H₂O layer, self-consistent with M and C/MR²)
 

@@ -12,7 +12,7 @@ requires-python = ">=3.10"
 dependencies = ["numpy>=2.0", "scipy>=1.11", "matplotlib"]
 
 [project.optional-dependencies]
-dev = ["pytest", "jupyter"]
+dev = ["pytest", "jupyter", "sympy"]
 eos = ["SeaFreeze"]
 
 [tool.setuptools.packages.find]
