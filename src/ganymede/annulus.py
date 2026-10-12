@@ -89,7 +89,9 @@ def operators(g):
     Mr = sp.lil_matrix((nr - 1, nr))          # centres -> interior faces: average
     for k in range(nr - 1):
         Gr[k, k + 1] = 1 / g.drc[k]; Gr[k, k] = -1 / g.drc[k]
-        Mr[k, k + 1] = 0.5; Mr[k, k] = 0.5
+        # width-weighted average: the adjoint of Ar under cell-volume weights, so the viscous
+        # operator is exactly symmetric on non-uniform grids (weights sum to 1; 1/2-1/2 if uniform)
+        Mr[k, k + 1] = 0.5 * g.dr[k + 1] / g.drc[k]; Mr[k, k] = 0.5 * g.dr[k] / g.drc[k]
     # angular: interior faces (nt-1) <-> centres (nt), uniform spacing
     Dt = sp.lil_matrix((nt, nt - 1))
     for j in range(nt):
@@ -154,6 +156,14 @@ def stokes_matrix(g, eta_c, eta_n, ops=None, fix_pressure=True):
         A[r0, :] = 0
         A[r0, r0] = 1.0
     return A.tocsc()
+
+
+def volume_weights(g):
+    """Control-volume weights of the v_r, v_theta and P equations; diag(w) @ A is symmetric."""
+    w_vr = (g.r_f[1:-1, None] * g.drc[:, None] * g.dt) * np.ones((1, g.nt))
+    w_vt = (g.r_c[:, None] * g.dr[:, None] * g.dt) * np.ones((1, g.nt - 1))
+    w_p = (g.r_c[:, None] * g.dr[:, None] * g.dt) * np.ones((1, g.nt))
+    return np.concatenate([w_vr.ravel(), w_vt.ravel(), w_p.ravel()])
 
 
 def unpack(g, x):

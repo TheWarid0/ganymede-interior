@@ -1,6 +1,6 @@
 """Manufactured solution for the annulus Stokes solver (needs sympy; used by the tests only).
 
-Stream function psi = F(r) sin(k theta) on theta in [0, pi]: v_r = (1/r) dpsi/dtheta, v_t = -dpsi/dr is
+Stream function psi = F(r) sin(k pi theta / span) on theta in [0, span]: v_r = (1/r) dpsi/dtheta, v_t = -dpsi/dr is
 divergence free. F is a polynomial chosen so that every wall is exactly free slip:
     v_r = 0 and r d(v_t/r)/dr = 0 at r_in and r_out  ->  F = 0 and F'' = F'/r there;
     v_t = 0 and dv_r/dtheta = 0 at theta = 0, pi     ->  automatic for sin(k theta).
@@ -10,7 +10,7 @@ The body force follows from f = -div(2 eta eps) + grad P, evaluated symbolically
 import numpy as np
 
 
-def manufactured(r_in, r_out, k=2, a_visc=3.0):
+def manufactured(r_in, r_out, k=2, a_visc=3.0, span=np.pi):
     import sympy as s
     r, t = s.symbols("r theta", positive=True)
     c0, c1 = s.symbols("c0 c1")
@@ -18,7 +18,8 @@ def manufactured(r_in, r_out, k=2, a_visc=3.0):
     Fp, Fpp = s.diff(F, r), s.diff(F, r, 2)
     sol = s.solve([(Fpp - Fp / r).subs(r, r_in), (Fpp - Fp / r).subs(r, r_out)], [c0, c1])
     F = F.subs(sol)
-    psi = F * s.sin(k * t)
+    kk = k * s.pi / s.nsimplify(span) if abs(span - np.pi) > 1e-12 else k
+    psi = F * s.sin(kk * t)
     vr = s.diff(psi, t) / r
     vt = -s.diff(psi, r)
     eta = s.exp(a_visc * (r - r_in) / (r_out - r_in)) * (1 + s.Rational(1, 2) * s.cos(t))
