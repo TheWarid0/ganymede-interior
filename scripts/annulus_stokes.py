@@ -26,8 +26,8 @@ def main(a):
     span = np.radians(a.span_deg)
     r_in = 1 - a.shell_km / R_G
     nt = a.ntheta
-    if nt is None:                                   # square cells, divisible by 2^(levels-1)
-        q = 2 ** max(int(np.log2(a.nr)) - 2, 0)
+    if nt is None:                                   # square cells, divisible by 2^(levels-1) on every process
+        q = 2 ** max(int(np.log2(a.nr)) - 2, 0) * PETSc.COMM_WORLD.getSize()
         nt = max(q, int(round(a.nr * span * (1 - 0.5 * a.shell_km / R_G) / (a.shell_km / R_G) / q)) * q)
     make = AnnulusGrid.uniform if a.refine <= 1 else (lambda *x, **k: AnnulusGrid.refined(*x, ratio=a.refine, **k))
     g = make(r_in, 1.0, a.nr, nt, span=span)

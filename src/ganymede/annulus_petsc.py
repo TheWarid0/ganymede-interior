@@ -146,8 +146,11 @@ def solve_annulus_petsc(g, eta_c, eta_n, f_r, f_t, layout=None, rtol=1e-8, u_rto
     pc.setFieldSplitSchurPreType(PETSc.PC.FieldSplitSchurPreType.USER, S)
     ksp.setTolerances(rtol=rtol, max_it=max_it)
     ksp.setUp()
+    # DMStag can only coarsen if every rank's piece halves evenly, so check the local sizes
+    lx, lz = (np.asarray(o) for o in L.dm.getOwnershipRanges()[:2])
     levels = 1
-    while nt % 2**levels == 0 and nr % 2**levels == 0 and min(nt, nr) // 2**levels >= 4:
+    while (np.all(lx % 2**levels == 0) and np.all(lz % 2**levels == 0)
+           and min(nt, nr) // 2**levels >= 4 and min(lx.min(), lz.min()) // 2**levels >= 1):
         levels += 1
     ku, kp = pc.getFieldSplitSubKSP()
     kp.setType("preonly"); kp.getPC().setType("jacobi")
