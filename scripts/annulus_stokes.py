@@ -30,8 +30,9 @@ def main(a):
         q = 2 ** max(int(np.log2(a.nr)) - 2, 0) * PETSc.COMM_WORLD.getSize()
         nt = max(q, int(round(a.nr * span * (1 - 0.5 * a.shell_km / R_G) / (a.shell_km / R_G) / q)) * q)
     make = AnnulusGrid.uniform if a.refine <= 1 else (lambda *x, **k: AnnulusGrid.refined(*x, ratio=a.refine, **k))
-    g = make(r_in, 1.0, a.nr, nt, span=span)
-    sol = manufactured(r_in, 1.0, k=a.k, span=span)
+    d = 2 if a.geometry == "spherical" else 1
+    g = make(r_in, 1.0, a.nr, nt, span=span, d=d)
+    sol = manufactured(r_in, 1.0, k=a.k, span=span, d=d)
     Rc, Tc = g.p_points(); Rn, Tn = g.node_points(); R, T = g.vr_points(); R2, T2 = g.vt_points()
     eta_c = sol["eta"](Rc, Tc)
     layout = AnnulusLayout(g)
@@ -61,5 +62,7 @@ if __name__ == "__main__":
     ap.add_argument("--span_deg", type=float, default=180.0)
     ap.add_argument("--refine", type=float, default=1.0, help="radial refinement ratio towards the walls (1 = uniform)")
     ap.add_argument("--k", type=int, default=4, help="angular wavenumber of the test flow")
+    ap.add_argument("--geometry", choices=["cylindrical", "spherical"], default="cylindrical",
+                    help="spherical = spherical annulus (Hernlund & Tackley 2008)")
     ap.add_argument("--vtk", default=None)
     main(ap.parse_args())

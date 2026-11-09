@@ -1,6 +1,6 @@
 # ganymede-interior
 
-A readable, tested interior-structure and convection model for **Ganymede**, written from scratch in Python. The aim is a code built around ice physics, not adapted from a silicate-mantle code, and growing step by step towards two-phase (ice–water) convection in the high-pressure ice layer.
+A readable, tested interior-structure and convection model for **Ganymede**, written from scratch in Python. The aim is a code built around ice physics, not adapted from a silicate-mantle code, and growing step by step towards two-phase (ice–water) convection in the ice shell, the ocean beneath it and the high-pressure ice layer.
 
 > Work in progress. Each stage is checked against an analytic or published benchmark before the next one starts.
 
@@ -28,6 +28,51 @@ A readable, tested interior-structure and convection model for **Ganymede**, wri
 | 6a | Salty hydrosphere evolution (column): ice Ih shell, two-layer ocean (well-mixed + sinking brine), HP ice; salt rejection at the mushy shell base, freezing-point depression, overturn of the brine layer; radius from mass balance | Liquidus vs SeaFreeze / Kalousová (0.5 K); seawater freezing point; mass to 1e-6; salt to 1e-16; energy to 1e-14 (well-mixed), 1e-2 (brine cycles) | ✅ first version |
 | 7a | Stokes in a 2D annulus sector (polar staggered grid, arbitrary radial refinement, variable viscosity, free slip) | Manufactured solution with exact free-slip walls: 2nd order in v_r, v_θ, P on thick and 150 km annuli, uniform and refined grids; div v ≈ 1e-12 | ✅ |
 | 7b | Parallel annulus Stokes (PETSc DMStag, geometric multigrid, Schur field split, MPI), ParaView output on the curved shell (`scripts/annulus_stokes.py`) | Matches the direct solver to 1e-6; 1 vs 2 MPI ranks identical; half annulus 150 km, 64×3424 cells in ~5 s on 2 cores | ✅ |
+| 7c | Thermal convection in the annulus; spherical-annulus geometry (Hernlund & Tackley 2008) next to the cylindrical one; finite-volume energy equation (`scripts/annulus_convection.py`) | Spherical-annulus Stokes 2nd order (manufactured solution), weighted matrix symmetric to 1e-16; conduction |Nu − 1| = 8.1e-4 → 2.0e-4 → 5.1e-5 (2nd order); heat conserved to round-off; H&T (2008) Ra = 10⁴: Nu and v_rms within ~1 % (5 plumes) | ✅ (SciPy; PETSc next) |
+
+## Numerical method
+
+**Discretisation: finite differences on a staggered grid**, which here is the same thing as a conservative finite-volume scheme. Each cell is a control volume:
+
+```
+        v_z (or v_r)                    v_z, v_r : on horizontal / radial faces
+     +------^------+                    v_x, v_θ : on vertical / angular faces
+     |             |                    P, T, φ, η : at cell centres
+v_x  >   P, T, η   >  v_x               τ_xz (τ_rθ), η_node : at cell corners
+     |             |
+     +------^------+  <- τ_xz, η at the corners
+        v_z
+```
+
+Every equation is a balance of fluxes through the faces of a cell, so mass and heat are conserved to round-off. Derivatives are central differences between neighbours, which is second order: halving the cell size cuts the error by 4. Every stage checks this.
+
+**Grids.** These are structured, fixed (Eulerian) grids:
+- Cartesian boxes in 2D and 3D (Stages 2–5).
+- A polar annulus for the curved shell (Stage 7), in two geometries: *cylindrical* (a slice through a cylinder) and *spherical annulus* (Hernlund & Tackley 2008: the equatorial slice of a sphere, with volumes ∝ r² dr dθ, so it behaves like a sphere and not a cylinder).
+- The radial spacing can be refined towards the walls.
+
+**No markers.** Temperature, porosity and salinity are all grid fields. That is simple and conservative, but advection smears sharp fronts. Before composition or salt is moved around in 2D, the plan is a TVD (slope-limited) advection scheme or markers.
+
+**Stokes solver.** The matrix is assembled from exact 1D difference operators (sparse Kronecker products). After weighting by cell volumes it is exactly symmetric, a saddle-point system [[K, G], [Gᵀ, 0]]. It is solved either:
+- with SciPy's direct solver (small grids), or
+- with PETSc: FGMRES with a Schur-complement field split. The velocity block uses CG with geometric multigrid on a DMStag grid hierarchy (Galerkin coarse operators, Chebyshev/Jacobi smoothing); the Schur complement is approximated by −diag(V/η). It runs MPI-parallel.
+
+**Energy.** Finite volumes at cell centres, using the same control volumes as the continuity equation, so the discretely divergence-free velocity carries heat exactly conservatively:
+- central advection (second order) for benchmarks; first-order upwind in the two-phase prototypes (Stages 4–5);
+- implicit (backward Euler) time steps;
+- steady states polished with Picard iterations.
+
+**Two-phase flow.**
+- Stage 1 solves the full McKenzie (1984) compaction equations in 1D.
+- Stages 4–5 use the zero-compaction-length limit of Kalousová et al. (2018): water moves by Darcy flow driven by the ice–water density difference, and the temperate-ice energy balance (melting, freezing, T ≤ T_m) is split from transport.
+- The full 2D compaction system (bulk viscosity, compaction pressure) is not built yet.
+
+**Verification** comes in three kinds:
+- exact solutions (manufactured solutions, conduction, Riemann problems), which test the operators themselves;
+- published benchmarks (Blankenbach et al. 1989; Hernlund & Tackley 2008; Kalousová et al. 2018);
+- conservation identities (mass, heat, salt, energy budgets).
+
+Regression tests (serial = parallel, PETSc = SciPy) come on top; they only show that the code agrees with itself.
 
 ## First results (pure-water H₂O layer, self-consistent with M and C/MR²)
 
@@ -157,11 +202,36 @@ Column model of the whole hydrosphere (fixed rock and H₂O + salt mass, radius 
 
 Not in this model, and possible ways out: an early Ganymede with no HP ice yet (or HP ice melted during a resonance passage, Bland et al. 2009); MgSO₄ instead of NaCl (different phase behaviour, e.g. Vance et al. 2014); local rather than global extension, from stresses in a thickening shell and pressurisation of the ocean beneath it. Reproduce with `python scripts/hydro_evolution.py run <label> --f_sink 1 --out results/<file>.json` and `python scripts/hydro_evolution.py plot results/hydro_*.json`.
 
+### Convection in the curved shell (Stage 7c)
+
+The annulus now convects. The test case is the Hernlund & Tackley (2008) **spherical annulus**: basal heating, isoviscous, Ra = 10⁴, inner radius 1.22 and outer radius 2.22 (in shell thicknesses). The half annulus is computed with free-slip, insulating side walls, which are mirror planes of the full-annulus flow; the figure mirrors it.
+
+![Ra = 1e4 spherical annulus](figures/annulus_ht_ra1e4.png)
+
+| Planform (plumes in the full annulus) | Grid (half annulus) | Nu | v_rms |
+|---|---|---|---|
+| 5 | 32 × 256 | 4.187 | 38.02 |
+| 5 | 64 × 512 | 4.212 | 38.17 |
+| 5 | 128 × 1024 | 4.219 | 38.21 |
+| 5 | extrapolated | **4.221** | **38.22** |
+| 4 | 64 × 512 | 4.163 | 40.62 |
+| 6 | 64 × 512 | 4.120 | 34.81 |
+| Hernlund & Tackley (2008) | 32 × 256 per 2π | 4.18 | 37.7 |
+
+- The 5-plume state matches the published values to about 1 %. The reference was computed on a grid 4× coarser in θ than our coarsest run, so a percent-level offset is within its own accuracy.
+- The changes between grids shrink 4× per refinement (0.026 → 0.006 in Nu), which is second-order convergence.
+- **The planform matters more than the resolution:** 4, 5 or 6 plumes give Nu between 4.12 and 4.21, and v_rms between 34.8 and 40.6. So any comparison has to state the plume count. MILEVA's published 4.05 / 35.0 is close to our 6-plume state.
+- In every steady run the bottom and top Nusselt numbers agree to round-off, which checks heat conservation through the whole shell.
+
+Reproduce with `python scripts/annulus_convection.py --nr 64 --plumes 5`, and the figure with `python scripts/plot_annulus_convection.py --nr 64`. The cylindrical annulus is `--geometry cylindrical` (`--r_in 0.4327` gives H&T's scaled cylinder).
+
 ## Install
 
 ```bash
 pip install -e ".[dev,eos]"
-conda install -c conda-forge petsc petsc4py mpi4py   # for Stage 3
+conda install -c conda-forge petsc petsc4py mpi4py   # for Stages 3 and 7b
+# macOS: prefer Open MPI (MPICH's network layer can fail at shutdown):
+# conda install -c conda-forge "mpi=*=openmpi" openmpi mpi4py petsc4py
 pytest              # fast tests (~25 s)
 pytest -m slow      # 128² Blankenbach 2a run and the 200 km HP column (~1 min)
 ```

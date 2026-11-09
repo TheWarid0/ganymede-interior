@@ -31,6 +31,32 @@ def test_second_order_convergence(r_in, aspect, kind):
     assert max(errs[1]) < 4e-2
 
 
+@pytest.mark.parametrize("r_in, aspect, kind", [(1.22 / 2.22, 2, "uniform"), (1 - 150 / 2631.2, 8, "refined")])
+def test_spherical_annulus_second_order(r_in, aspect, kind):
+    """Same manufactured-solution test for the spherical annulus (d = 2, Hernlund & Tackley 2008)."""
+    sol = manufactured(r_in, 1.0, d=2)
+    errs = []
+    for n in (16, 32):
+        g = (AnnulusGrid.uniform(r_in, 1.0, n, aspect * n, d=2) if kind == "uniform"
+             else AnnulusGrid.refined(r_in, 1.0, n, aspect * n, ratio=4, d=2))
+        errs.append(_solve(g, sol)[0])
+    for e0, e1 in zip(*errs):
+        assert e0 / e1 == pytest.approx(4.0, rel=0.15)
+
+
+@pytest.mark.parametrize("d", [1, 2])
+def test_weighted_matrix_symmetric(d):
+    """diag(control volumes) @ A is exactly symmetric on a refined grid, in both geometries."""
+    import scipy.sparse as sp
+    from ganymede.annulus import stokes_matrix, volume_weights
+    g = AnnulusGrid.refined(0.55, 1.0, 12, 24, ratio=3, d=d)
+    rng = np.random.default_rng(0)
+    A = stokes_matrix(g, np.exp(rng.normal(size=(g.nr, g.nt))), np.exp(rng.normal(size=(g.nr + 1, g.nt + 1))),
+                      fix_pressure=False)
+    W = sp.diags(volume_weights(g)) @ A
+    assert abs(W - W.T).max() < 1e-13 * abs(W).max()
+
+
 def test_discrete_divergence_free():
     sol = manufactured(0.5, 1.0)
     g = AnnulusGrid.uniform(0.5, 1.0, 16, 32)

@@ -11,11 +11,16 @@ Radial faces r_f may be spaced arbitrarily (refine towards the ocean); theta spa
 The matrix is assembled from exact discrete operators (strain rates, stress divergence, gradient,
 divergence) as sparse products, so compaction (a bulk-viscosity term) is a single extra term later.
 
+Two geometries, chosen by g.d:
+    d = 1  cylindrical annulus (a slice through an infinitely long cylinder)
+    d = 2  spherical annulus (Hernlund & Tackley 2008): the equatorial slice of a sphere, with the
+           out-of-plane velocity set to zero; volumes scale as r^2 dr dtheta like in a sphere.
 Equations (no compaction yet):   -div(tau) + grad P = f,   div v = 0,   tau = 2 eta eps, with
     eps_rr = dv_r/dr,  eps_tt = (1/r) dv_t/dtheta + v_r/r,  2 eps_rt = r d(v_t/r)/dr + (1/r) dv_r/dtheta
-    (div tau)_r = (1/r) d(r tau_rr)/dr + (1/r) d tau_rt/dtheta - tau_tt/r
-    (div tau)_t = (1/r^2) d(r^2 tau_rt)/dr + (1/r) d tau_tt/dtheta
-    div v       = (1/r) d(r v_r)/dr + (1/r) dv_t/dtheta
+    eps_oo = v_r/r   (out-of-plane hoop strain, spherical annulus only)
+    (div tau)_r = (1/r^d) d(r^d tau_rr)/dr + (1/r) d tau_rt/dtheta - (tau_tt + (d-1) tau_oo)/r
+    (div tau)_t = (1/r^(d+1)) d(r^(d+1) tau_rt)/dr + (1/r) d tau_tt/dtheta
+    div v       = (1/r^d) d(r^d v_r)/dr + (1/r) dv_t/dtheta
 Unknowns are ordered [v_r, v_theta, P], each row-major with the radial index outermost.
 """
 import numpy as np
@@ -24,7 +29,10 @@ from scipy.sparse.linalg import spsolve
 
 
 class AnnulusGrid:
-    def __init__(self, r_faces, ntheta, span=np.pi, theta0=0.0):
+    def __init__(self, r_faces, ntheta, span=np.pi, theta0=0.0, d=1):
+        if d not in (1, 2):
+            raise ValueError("d must be 1 (cylindrical) or 2 (spherical annulus)")
+        self.d = d
         self.r_f = np.asarray(r_faces, float)
         self.nr = len(self.r_f) - 1
         self.nt = int(ntheta)
@@ -65,8 +73,10 @@ class AnnulusGrid:
         return np.meshgrid(self.r_f, self.t_f, indexing="ij")
 
     def cell_area(self):
-        """Area of each cell (for volume-weighted norms): 0.5 (r_out^2 - r_in^2) dtheta."""
-        a = 0.5 * (self.r_f[1:] ** 2 - self.r_f[:-1] ** 2) * self.dt
+        """Measure of each cell for volume averages: integral of r^d dr dtheta
+        (area for the cylindrical annulus, volume / 2 for the spherical annulus)."""
+        q = self.d + 1
+        a = (self.r_f[1:] ** q - self.r_f[:-1] ** q) / q * self.dt
         return np.repeat(a[:, None], self.nt, axis=1)
 
 
@@ -106,6 +116,7 @@ def operators(g):
     Ir, It = sp.identity(nr), sp.identity(nt)
     Ir1, It1 = sp.identity(nr - 1), sp.identity(nt - 1)
     rc, rf = g.r_c, g.r_f[1:-1]
+    d = g.d
     K = sp.kron
     ops = dict(
         # strain rates at centres
@@ -116,15 +127,16 @@ def operators(g):
         Srt_vr=K(_d(1 / rf), Gt),                           # (1/r) dv_r/dtheta
         Srt_vt=K(_d(rf) @ Gr @ _d(1 / rc), It1),            # r d(v_t/r)/dr
         # stress divergence
-        Fr_rr=K(_d(1 / rf) @ Gr @ _d(rc), It),              # (1/r) d(r tau_rr)/dr      centres -> v_r points
+        Fr_rr=K(_d(1 / rf**d) @ Gr @ _d(rc**d), It),        # (1/r^d) d(r^d tau_rr)/dr  centres -> v_r points
         Fr_rt=K(_d(1 / rf), Dt),                            # (1/r) d tau_rt/dtheta     nodes   -> v_r points
-        Fr_tt=K(_d(1 / rf) @ Mr, It),                       # tau_tt / r                centres -> v_r points
-        Ft_rt=K(_d(1 / rc**2) @ Dr @ _d(rf**2), It1),       # (1/r^2) d(r^2 tau_rt)/dr  nodes   -> v_t points
+        # tau/r for the hoop stresses, averaged as r^(d-1) tau so the weighted matrix stays symmetric
+        Fr_tt=K(_d(1 / rf**d) @ Mr @ _d(rc**(d - 1)), It),  # tau_tt / r                centres -> v_r points
+        Ft_rt=K(_d(1 / rc**(d + 1)) @ Dr @ _d(rf**(d + 1)), It1),  # (1/r^(d+1)) d(r^(d+1) tau_rt)/dr
         Ft_tt=K(_d(1 / rc), Gt),                            # (1/r) d tau_tt/dtheta     centres -> v_t points
         # pressure gradient and divergence
         Gp_r=K(Gr, It),
         Gp_t=K(_d(1 / rc), Gt),
-        Div_vr=K(_d(1 / rc) @ Dr @ _d(rf), It),
+        Div_vr=K(_d(1 / rc**d) @ Dr @ _d(rf**d), It),
         Div_vt=K(_d(1 / rc), Dt),
     )
     return ops
@@ -142,8 +154,8 @@ def stokes_matrix(g, eta_c, eta_n, ops=None, fix_pressure=True):
     Ttt_vt = 2 * Ec @ o["Ett_vt"]
     Trt_vr = En @ o["Srt_vr"]
     Trt_vt = En @ o["Srt_vt"]
-    # -(div tau)
-    Krr = -(o["Fr_rr"] @ Trr_vr + o["Fr_rt"] @ Trt_vr - o["Fr_tt"] @ Ttt_vr)
+    # -(div tau); the out-of-plane hoop stress tau_oo = 2 eta v_r / r adds (d-1) tau_oo / r
+    Krr = -(o["Fr_rr"] @ Trr_vr + o["Fr_rt"] @ Trt_vr - o["Fr_tt"] @ (Ttt_vr + (g.d - 1) * Ttt_vr))
     Krt = -(o["Fr_rt"] @ Trt_vt - o["Fr_tt"] @ Ttt_vt)
     Ktr = -(o["Ft_rt"] @ Trt_vr + o["Ft_tt"] @ Ttt_vr)
     Ktt = -(o["Ft_rt"] @ Trt_vt + o["Ft_tt"] @ Ttt_vt)
@@ -160,9 +172,10 @@ def stokes_matrix(g, eta_c, eta_n, ops=None, fix_pressure=True):
 
 def volume_weights(g):
     """Control-volume weights of the v_r, v_theta and P equations; diag(w) @ A is symmetric."""
-    w_vr = (g.r_f[1:-1, None] * g.drc[:, None] * g.dt) * np.ones((1, g.nt))
-    w_vt = (g.r_c[:, None] * g.dr[:, None] * g.dt) * np.ones((1, g.nt - 1))
-    w_p = (g.r_c[:, None] * g.dr[:, None] * g.dt) * np.ones((1, g.nt))
+    d = g.d
+    w_vr = (g.r_f[1:-1, None] ** d * g.drc[:, None] * g.dt) * np.ones((1, g.nt))
+    w_vt = (g.r_c[:, None] ** d * g.dr[:, None] * g.dt) * np.ones((1, g.nt - 1))
+    w_p = (g.r_c[:, None] ** d * g.dr[:, None] * g.dt) * np.ones((1, g.nt))
     return np.concatenate([w_vr.ravel(), w_vt.ravel(), w_p.ravel()])
 
 
